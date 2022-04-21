@@ -15,6 +15,7 @@
 #include "discord/session.h"
 #include "discord/message.h"
 #include "estr.h"
+#include "config.h"
 
 #define ESP_WIFI_SSID      "..."
 #define ESP_WIFI_PASS      "rblock1234"
@@ -23,6 +24,7 @@
 /* FreeRTOS event group to signal when we are connected*/
 static EventGroupHandle_t s_wifi_event_group;
 static discord_handle_t bot;
+static Config config;
 /* The event group allows multiple bits for each event, but we only care about two events:
  * - we are connected to the AP with an IP
  * - we failed to connect after the maximum amount of retries */
@@ -31,11 +33,52 @@ static discord_handle_t bot;
 
 static const char *TAG = "wifi station";
 static const char* DISCORD_TAG = "discord_bot";
-
 static int s_retry_num = 0;
 
-static void event_handler(void* arg, esp_event_base_t event_base,
-                                int32_t event_id, void* event_data)
+static struct Config config; 
+
+static void event_handler(void*, esp_event_base_t, int32_t, void*);
+void wifi_init_sta(void);
+static void bot_event_handler(void*, esp_event_base_t, int32_t, void*);
+void execute_command(char *);
+
+void app_main(void)
+{   
+    config_init(&config);
+    register_appliance(&config, "fridge");
+
+    if (config.appliances[0]) ESP_LOGI("TEST", "Pin 1: %s", config.appliances[0]);
+    
+    ESP_LOGI("TEST", "Pins used: %d", config.pinsUsed);
+
+    delete_appliance(&config, "fridge");
+    ESP_LOGI("TEST", "Pins used: %d", config.pinsUsed);
+    //Initialize NVS
+    esp_err_t ret = nvs_flash_init();
+    if (ret == ESP_ERR_NVS_NO_FREE_PAGES || ret == ESP_ERR_NVS_NEW_VERSION_FOUND) {
+      ESP_ERROR_CHECK(nvs_flash_erase());
+      ret = nvs_flash_init();
+    }
+    ESP_ERROR_CHECK(ret);
+
+    ESP_LOGI(TAG, "ESP_WIFI_MODE_STA");
+    wifi_init_sta();
+
+	discord_config_t cfg = {
+        .intents = DISCORD_INTENT_GUILD_MESSAGES | DISCORD_INTENT_GUILD_MESSAGE_REACTIONS
+    };
+	bot = discord_create(&cfg);
+    ESP_ERROR_CHECK(discord_register_events(bot, DISCORD_EVENT_ANY, bot_event_handler, NULL));
+    ESP_ERROR_CHECK(discord_login(bot));
+
+    config_delete(&config);
+}
+
+void execute_command(char *command) {
+
+}
+
+static void event_handler(void* arg, esp_event_base_t event_base, int32_t event_id, void* event_data)
 {
     if (event_base == WIFI_EVENT && event_id == WIFI_EVENT_STA_START) {
         esp_wifi_connect();
@@ -150,26 +193,18 @@ static void bot_event_handler(void* handler_arg, esp_event_base_t base, int32_t 
                     msg->content
                 );
 
-                char* echo_content = estr_cat("Hey ", msg->author->username, " you wrote `", msg->content, "`");
 
-                discord_message_t echo = {
-                    .content = echo_content,
-                    .channel_id = msg->channel_id
-                };
+                if (msg->content[0] == '!') {
+                    char* echo_content = estr_cat("Hey ", msg->author->username, " you wrote `", msg->content, "`");
+                    
+                    discord_message_t echo = {
+                        .content = echo_content,
+                        .channel_id = msg->channel_id
+                    };
 
-                discord_message_t* sent_msg = NULL;
-                esp_err_t err = discord_message_send(bot, &echo, &sent_msg);
-                free(echo_content);
-
-                if(err == ESP_OK) {
-                    ESP_LOGI(DISCORD_TAG, "Echo message successfully sent");
-
-                    if(sent_msg) { // null check because message can be sent but not returned
-                        ESP_LOGI(DISCORD_TAG, "Echo message got ID #%s", sent_msg->id);
-                        discord_message_free(sent_msg);
-                    }
-                } else {
-                    ESP_LOGE(DISCORD_TAG, "Fail to send echo message");
+                    discord_message_t* sent_msg = NULL;
+                    discord_message_send(bot, &echo, &sent_msg);
+                    free(echo_content);
                 }
             }
             break;
@@ -190,26 +225,4 @@ static void bot_event_handler(void* handler_arg, esp_event_base_t base, int32_t 
             ESP_LOGW(DISCORD_TAG, "Bot logged out");
             break;
     }
-}
-
-void app_main(void)
-{
-    //Initialize NVS
-    esp_err_t ret = nvs_flash_init();
-    if (ret == ESP_ERR_NVS_NO_FREE_PAGES || ret == ESP_ERR_NVS_NEW_VERSION_FOUND) {
-      ESP_ERROR_CHECK(nvs_flash_erase());
-      ret = nvs_flash_init();
-    }
-    ESP_ERROR_CHECK(ret);
-
-    ESP_LOGI(TAG, "ESP_WIFI_MODE_STA");
-	ESP_LOGI("test", "test");
-    wifi_init_sta();
-
-	discord_config_t cfg = {
-        .intents = DISCORD_INTENT_GUILD_MESSAGES | DISCORD_INTENT_GUILD_MESSAGE_REACTIONS
-    };
-	bot = discord_create(&cfg);
-    ESP_ERROR_CHECK(discord_register_events(bot, DISCORD_EVENT_ANY, bot_event_handler, NULL));
-    ESP_ERROR_CHECK(discord_login(bot));
 }
