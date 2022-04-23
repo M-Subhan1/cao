@@ -45,14 +45,6 @@ void execute_command(char *);
 void app_main(void)
 {   
     config_init(&config);
-    register_appliance(&config, "fridge");
-
-    if (config.appliances[0]) ESP_LOGI("TEST", "Pin 1: %s", config.appliances[0]);
-    
-    ESP_LOGI("TEST", "Pins used: %d", config.pinsUsed);
-
-    delete_appliance(&config, "fridge");
-    ESP_LOGI("TEST", "Pins used: %d", config.pinsUsed);
     //Initialize NVS
     esp_err_t ret = nvs_flash_init();
     if (ret == ESP_ERR_NVS_NO_FREE_PAGES || ret == ESP_ERR_NVS_NEW_VERSION_FOUND) {
@@ -183,44 +175,19 @@ static void bot_event_handler(void* handler_arg, esp_event_base_t base, int32_t 
         case DISCORD_EVENT_MESSAGE_RECEIVED: {
                 discord_message_t* msg = (discord_message_t*) data->ptr;
 
-                ESP_LOGI(DISCORD_TAG, "New message (dm=%s, autor=%s#%s, bot=%s, channel=%s, guild=%s, content=%s)",
-                    ! msg->guild_id ? "true" : "false",
-                    msg->author->username,
-                    msg->author->discriminator,
-                    msg->author->bot ? "true" : "false",
-                    msg->channel_id,
-                    msg->guild_id ? msg->guild_id : "NULL",
-                    msg->content
-                );
+                char *applianceName = getApplianceName(&msg->content[5]);
 
+                ESP_LOGI("TEST", "Appliance Name: %s", applianceName);
 
-                if (msg->content[0] == '!') {
-                    char* echo_content = estr_cat("Hey ", msg->author->username, " you wrote `", msg->content, "`");
-                    
-                    discord_message_t echo = {
-                        .content = echo_content,
-                        .channel_id = msg->channel_id
-                    };
+                // if (msg->content[0] == '!') {
+                //     parse_and_execute_commands(bot, &config, msg->content);
+                // }
 
-                    discord_message_t* sent_msg = NULL;
-                    discord_message_send(bot, &echo, &sent_msg);
-                    free(echo_content);
-                }
+                free(applianceName);
             }
             break;
         
-        case DISCORD_EVENT_MESSAGE_UPDATED: {
-                discord_message_t* msg = (discord_message_t*) data->ptr;
-                ESP_LOGI(DISCORD_TAG, "%s has updated his message (#%s). New content: %s", msg->author->username, msg->id, msg->content);
-            }
-            break;
-        
-        case DISCORD_EVENT_MESSAGE_DELETED: {
-                discord_message_t* msg = (discord_message_t*) data->ptr;
-                ESP_LOGI(DISCORD_TAG, "Message #%s deleted", msg->id);
-            }
-            break;
-        
+
         case DISCORD_EVENT_DISCONNECTED:
             ESP_LOGW(DISCORD_TAG, "Bot logged out");
             break;
