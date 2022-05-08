@@ -45,14 +45,7 @@ void execute_command(char *);
 void app_main(void)
 {   
     config_init(&config);
-    register_appliance(&config, "fridge");
 
-    if (config.appliances[0]) ESP_LOGI("TEST", "Pin 1: %s", config.appliances[0]);
-    
-    ESP_LOGI("TEST", "Pins used: %d", config.pinsUsed);
-
-    delete_appliance(&config, "fridge");
-    ESP_LOGI("TEST", "Pins used: %d", config.pinsUsed);
     //Initialize NVS
     esp_err_t ret = nvs_flash_init();
     if (ret == ESP_ERR_NVS_NO_FREE_PAGES || ret == ESP_ERR_NVS_NEW_VERSION_FOUND) {
@@ -72,10 +65,6 @@ void app_main(void)
     ESP_ERROR_CHECK(discord_login(bot));
 
     config_delete(&config);
-}
-
-void execute_command(char *command) {
-
 }
 
 static void event_handler(void* arg, esp_event_base_t event_base, int32_t event_id, void* event_data)
@@ -193,18 +182,17 @@ static void bot_event_handler(void* handler_arg, esp_event_base_t base, int32_t 
                     msg->content
                 );
 
-
-                if (msg->content[0] == '!') {
-                    char* echo_content = estr_cat("Hey ", msg->author->username, " you wrote `", msg->content, "`");
-                    
+                char *response = parse_and_execute_commands(&config, msg->content);
+                
+                if (response) {                    
                     discord_message_t echo = {
-                        .content = echo_content,
+                        .content = response,
                         .channel_id = msg->channel_id
                     };
 
                     discord_message_t* sent_msg = NULL;
                     discord_message_send(bot, &echo, &sent_msg);
-                    free(echo_content);
+                    free(response);
                 }
             }
             break;

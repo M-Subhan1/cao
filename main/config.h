@@ -11,4 +11,5 @@ void config_init(struct Config*);
 void config_delete(struct Config*);
 void register_appliance(struct Config *config, char *name);
 void delete_appliance(struct Config *config, char *name);
-void parse_and_execute_commands(struct Config *config, char *command);
+char *parse_and_execute_commands(struct Config *config, char *command);
+void getWord(const char *command, int startIndex, char *buffer, int bufferSize);
