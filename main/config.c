@@ -46,6 +46,7 @@ int delete_appliance(struct Config *config, char *name) {
         if (config->appliances[i] && estr_eq(config->appliances[i], name)) {
             free(config->appliances[i]);
             config->appliances[i] = NULL;
+            config->appliance_status[i] = 0;
             config->pinsUsed--;
 
             return config->validPins[i];
@@ -108,6 +109,13 @@ char *parse_and_execute_commands(struct Config *config, char *command) {
             response = estr_cat("`", buffer, "` not bound");
         }
         
+    } else if (estr_sw(command, "!list_devices")) {
+        char *res = list_devices(config);
+
+        if (res) return res;
+        return estr_cat("Err");
+    } else if (estr_sw(command, "!list_commands")) {
+        return list_commands(config);
     }
 
     return response;
@@ -144,7 +152,7 @@ int switch_on(struct Config* config, char *appliance) {
     return 1; // (turned on)
 }
 
-int switch_on(struct Config* config, char *appliance) {
+int switch_off(struct Config* config, char *appliance) {
     int pin_index = get_pin_idx(config, appliance);
 
     // return err_code: -3 (no appliance bound)
@@ -157,7 +165,7 @@ int switch_on(struct Config* config, char *appliance) {
     
     // update status
     config->appliance_status[pin_index] = 0;
-    // turn appliance ff
+    // turn appliance off
 
     return 1; // (turned off)
 } 
@@ -168,4 +176,29 @@ int get_pin_idx(struct Config *config, char *name) {
     }
     // return err_code: -1 (not found)
     return -1; 
+}
+
+char* list_devices(struct Config* config) {
+    char pinString[10];
+    char *response = NULL;
+
+    if (config->pinsUsed == 0) return estr_cat("No Devices bound");
+
+    // loop over each appliance and append to string
+    for (int i = 0; i < config->maxAppliances; i++) {
+        if (config->appliances[i] != NULL) {
+            itoa(config->validPins[i], pinString, 10);
+            char *line = estr_cat("`" ,config->appliances[i], "` bound to Pin ", pinString, "\n");
+            char *temp = response; // get pointer to response string
+            if (response) response = estr_cat(response, line); // update response
+            else response = line;
+            if (temp) free(temp); // if temp exists, free temp
+        }
+    }
+
+    return response;
+}
+
+char* list_commands(struct Config* config) {
+    return NULL;
 }
