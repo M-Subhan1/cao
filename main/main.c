@@ -1,21 +1,22 @@
-#include <string.h>
+#include <stdio.h>
+#include <sys/param.h>
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
 #include "freertos/event_groups.h"
 #include "esp_system.h"
-#include "esp_wifi.h"
 #include "esp_event.h"
-#include "esp_log.h"
-#include "nvs_flash.h"
 #include "lwip/err.h"
 #include "lwip/sys.h"
+
+#include "esp_log.h"
+#include "nvs_flash.h"
+#include "esp_wifi.h"
 #include "discord.h"
 #include "discord/session.h"
 #include "discord/message.h"
-#include "estr.h"
 #include "config.h"
-#include "cJSON.h"
-#include "esp_http_client.h"
+#include <driver/gpio.h>
+#include "timer.h"
 
 #define ESP_WIFI_SSID      "..."
 #define ESP_WIFI_PASS      "rblock1234"
@@ -37,24 +38,27 @@ static struct Config config;
 static void event_handler(void*, esp_event_base_t, int32_t, void*);
 void wifi_init_sta(void);
 static void bot_event_handler(void*, esp_event_base_t, int32_t, void*);
-esp_err_t client_event_get_handler(esp_http_client_event_handle_t evt);
 
 void app_main(void)
 {   
+    gpio_pad_select_gpio(GPIO_NUM_2);
+    gpio_set_direction(GPIO_NUM_2, GPIO_MODE_OUTPUT);
+    gpio_set_level(GPIO_NUM_2, 1);
     config_init(&config);
-    //Initialize NVS
+
+    // Initialize NVS
     esp_err_t ret = nvs_flash_init();
+
+    ESP_LOGI("SIZE", "Config: %d", sizeof (Config));
+
     if (ret == ESP_ERR_NVS_NO_FREE_PAGES || ret == ESP_ERR_NVS_NEW_VERSION_FOUND) {
       ESP_ERROR_CHECK(nvs_flash_erase());
       ret = nvs_flash_init();
     }
-    ESP_ERROR_CHECK(ret);
 
-    // init wifi_sta
-    ESP_LOGI(TAG, "ESP_WIFI_MODE_STA");
+    ESP_ERROR_CHECK(ret);
     wifi_init_sta();
 
-    // update_config
     // init_discord_bot
 	discord_config_t cfg = {
         .intents = DISCORD_INTENT_GUILD_MESSAGES
@@ -64,6 +68,11 @@ void app_main(void)
     ESP_ERROR_CHECK(discord_register_events(bot, DISCORD_EVENT_ANY, bot_event_handler, NULL));
 
     discord_login(bot);
+
+    init_timer(TIMER_GROUP_0, TIMER_0, true, 3, GPIO_NUM_2, 0);
+    init_timer(TIMER_GROUP_0, TIMER_1, false, 4, GPIO_NUM_2, 1);
+    init_timer(TIMER_GROUP_1, TIMER_0, false, 7, GPIO_NUM_2, 1);
+    init_timer(TIMER_GROUP_1, TIMER_1, false, 10, GPIO_NUM_2, 1);
 }
 
 void wifi_init_sta(void)
@@ -80,7 +89,6 @@ void wifi_init_sta(void)
 
     esp_event_handler_instance_t instance_any_id;
     esp_event_handler_instance_t instance_got_ip;
-    esp_event_handler_instance_t instance_lost_ip;
 
     ESP_ERROR_CHECK(esp_event_handler_instance_register(WIFI_EVENT,
                                                         ESP_EVENT_ANY_ID,
@@ -202,27 +210,4 @@ static void bot_event_handler(void* handler_arg, esp_event_base_t base, int32_t 
             ESP_LOGW(DISCORD_TAG, "Bot logged out");
             break;
     }
-}
-
-esp_err_t client_event_get_handler(esp_http_client_event_handle_t evt) {
-    switch (evt->event_id)
-    {
-    case HTTP_EVENT_ON_DATA: 
-        printf("HTTP_EVENT_ON_DATA: %.*s\n", evt->data_len, (char *) evt->data);
-        /* code */
-        cJSON* json = cJSON_ParseWithLength(evt->data, evt->data_len);
-
-        if (json) {
-            cJSON *name = cJSON_GetObjectItemCaseSensitive(json, "maxAppliances");
-        } else {
-            ESP_LOGI(TAG, "Invalid JSON");
-        }   
-
-        break;
-
-    default:
-        break;
-    }
-
-    return ESP_OK;
 }

@@ -1,3 +1,3 @@
-PROJECT_NAME := esp-idf-vscode-boilerplate
+PROJECT_NAME := esp-discord-bot
 
 include $(IDF_PATH)/make/project.mk
