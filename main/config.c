@@ -3,24 +3,20 @@
 #include "config.h"
 #include "esp_log.h"
 #include "esp_http_client.h"
+#include "timer.h"
 
 extern const uint8_t certificate_pem_start[] asm("_binary_certificate_pem_start");
 extern const uint8_t certificate_pem_end[]   asm("_binary_certificate_pem_end");
 
 void config_init(Config *config) {
-    int valid_pins[10] = {1, 2, 3, 4, 5, 6, 7, 8, 9, 10};
-    config->max_devices = 10;
-    config->pins_used = 0;
+    int valid_pins[MAX_DEVICES] = {1, 2, 3, 4, 5, 6, 7, 8, 9, 10};
 
-    for (int i = 0; i < config->max_devices; i++) {
+    for (int i = 0; i < MAX_DEVICES; i++) {
         config->valid_pins[i] = valid_pins[i];
-        config->devices[i] = NULL;
-        config->device_status[i] = DEVICE_STATUS_OFF;
+        config->devices[i].name[0] = '\0';
+        config->devices[i].status = DEVICE_STATUS_NOT_BOUND;
+        config->devices[i].pin = -1;
     }
-}
-
-void config_delete(Config *config) {
-    for (int i = 0; i < config->max_devices; i++) if (config->devices[i]) free(config->devices[i]);
 }
 
 char *parse_and_execute_commands(Config *config, char *command) {
@@ -38,7 +34,7 @@ char *parse_and_execute_commands(Config *config, char *command) {
         if (status == DEVICE_ERR_NO_VACANT_PINS) {
             response = estr_cat("All Pins Used. Kindly unbind a pin before trying again");
         } else if (status == DEVICE_ERR_NONE || status == DEVICE_ERR_ALREADY_BOUND) {
-            itoa(config->valid_pins[get_pin_idx(config, buffer)], pinString, 10);
+            itoa(config->devices[get_device_idx(config, buffer)].pin, pinString, 10);
 
             if (status == DEVICE_ERR_NONE) response = estr_cat("Bound `", buffer, "` to Pin ", pinString);
             else if (status == DEVICE_ERR_ALREADY_BOUND) response = estr_cat("`", buffer, "` already bound to Pin `", pinString);
@@ -50,7 +46,7 @@ char *parse_and_execute_commands(Config *config, char *command) {
 
         if (status == DEVICE_ERR_NOT_BOUND) response = estr_cat("`", buffer, "`is not bound to any pin!");
         else if (status == DEVICE_ERR_NONE)  {
-            itoa(config->valid_pins[get_pin_idx(config, buffer)], pinString, 10);
+            itoa(config->devices[get_device_idx(config, buffer)].pin, pinString, 10);
             response = estr_cat("Unbound `", buffer, "` from Pin ", pinString);
         }
 
@@ -119,25 +115,32 @@ int get_next_word(const char *command, int startIndex, char *buffer, int buffer_
     return index;
 }
 
-int get_pin_idx(Config *config, char *name) {
-    for (int i = 0; i < config->max_devices; i++) {
-        if (estr_eq(config->devices[i], name)) return i;
+int get_device_idx(Config *config, char *name) {
+    for (int i = 0; i < MAX_DEVICES; i++) {
+        if (estr_eq(config->devices[i].name, name)) return i;
     }
     // return err_code: -1 (not found)
     return -1; 
 }
 
 DEVICE_ERR register_device(Config *config, char *name) {
+    int index = 0;
     // if no pins are vacant, return err_code: -1
-    if (config->pins_used == config->max_devices) {
+    if (config->pins_used == MAX_DEVICES) {
         return DEVICE_ERR_NO_VACANT_PINS;
     }
     // If device Already Exists, return err_code: -2 indicating that device already exists
-    if (get_pin_idx(config, name) != -1) return DEVICE_ERR_ALREADY_BOUND;
+    if (get_device_idx(config, name) != -1) return DEVICE_ERR_ALREADY_BOUND;
     // If device Does not Exist find a vacant pin and create device
-    for (int i = 0; i < config->max_devices; i++) {
-        if (!config->devices[i]) {
-            config->devices[i] = estr_cat(name);
+    for (int i = 0; i < MAX_DEVICES; i++) {
+        if (config->devices[i].name[0] == '\0') {
+            while (name[index] != '\0' && index < DEVICE_NAME_LENGTH - 1)
+            {
+                config->devices[i].name[index] = name[index++];
+                config->devices[i].status = DEVICE_STATUS_OFF;
+                config->devices[i].pin = config->valid_pins[i];
+            }
+            
             config->pins_used++;
             return DEVICE_ERR_NONE;
         }
@@ -150,11 +153,11 @@ DEVICE_ERR delete_device(Config *config, char *name) {
     if (config->pins_used == 0) return DEVICE_ERR_NOT_BOUND;
 
     // find the index of the device and remove device
-    for (int i = 0; i < config->max_devices; i++) {
-        if (config->devices[i] && estr_eq(config->devices[i], name)) {
-            free(config->devices[i]);
-            config->devices[i] = NULL;
-            config->device_status[i] = DEVICE_STATUS_OFF;
+    for (int i = 0; i < MAX_DEVICES; i++) {
+        if (estr_eq(config->devices[i].name, name)) {
+            config->devices[i].status = DEVICE_STATUS_NOT_BOUND;
+            config->devices[i].pin = -1;
+            config->devices[i].name[0] = '\0';
             config->pins_used--;
 
             return DEVICE_ERR_NONE;
@@ -166,53 +169,61 @@ DEVICE_ERR delete_device(Config *config, char *name) {
 }
 
 DEVICE_ERR switch_on(Config* config, char *device) {
-    int pin_index = get_pin_idx(config, device);
+    int device_index = get_device_idx(config, device);
 
     // return err_code: -3 (no device bound)
-    if (pin_index == -1) return DEVICE_ERR_NOT_BOUND;
+    if (device_index == -1) return DEVICE_ERR_NOT_BOUND;
     // if device is bound and device status is disabled return err_code: -1 // (disabled on)
-    if (config->device_status[pin_index] == DEVICE_STATUS_DISABLED) return DEVICE_ERR_DISABLED;
+    if (config->devices[device_index].status == DEVICE_STATUS_DISABLED) return DEVICE_ERR_DISABLED;
 
     // if device is bound and device is on, return err_code: -2
-    if (config->device_status[pin_index] == DEVICE_STATUS_ON) return DEVICE_ERR_ALREADY_IN_WANTED_STATE; // (already on)
+    if (config->devices[device_index].status == DEVICE_STATUS_ON) return DEVICE_ERR_ALREADY_IN_WANTED_STATE; // (already on)
     
     // update status
-    config->device_status[pin_index] = DEVICE_STATUS_ON;
+    config->devices[device_index].status = DEVICE_STATUS_ON;
     // turn device on
 
     return DEVICE_ERR_NONE; // (turned on)
 }
 
 DEVICE_ERR switch_off(Config* config, char *device) {
-    int pin_index = get_pin_idx(config, device);
+    int device_index = get_device_idx(config, device);
 
     // return err_code: -3 (no device bound)
-    if (pin_index == -1) return DEVICE_ERR_NOT_BOUND;
+    if (device_index == -1) return DEVICE_ERR_NOT_BOUND;
     // if device is bound and device status is disabled return err_code: -1 (disabled)
-    if (config->device_status[pin_index] == DEVICE_STATUS_DISABLED) return DEVICE_ERR_DISABLED;
+    if (config->devices[device_index].status == DEVICE_STATUS_DISABLED) return DEVICE_ERR_DISABLED;
 
     // if device is bound and device is on, return err_code: -2 (already off)
-    if (config->device_status[pin_index] == DEVICE_STATUS_OFF) return DEVICE_ERR_ALREADY_IN_WANTED_STATE;
+    if (config->devices[device_index].status == DEVICE_STATUS_OFF) return DEVICE_ERR_ALREADY_IN_WANTED_STATE;
     
     // update status
-    config->device_status[pin_index] = DEVICE_STATUS_OFF;
+    config->devices[device_index].status = DEVICE_STATUS_OFF;
     // turn device off
 
     return DEVICE_ERR_NONE;
 } 
 
 DEVICE_ERR disable_device(Config *config, char *name) {
-    int pin_index = get_pin_idx(config, name);
+    int device_index = get_device_idx(config, name);
 
     // return err_code: -3 (no device bound)
-    if (pin_index == -1) return DEVICE_ERR_NOT_BOUND;
+    if (device_index == -1) return DEVICE_ERR_NOT_BOUND;
     // if device is bound and device status is disabled return err_code: -2 (already disabled)
-    if (config->device_status[pin_index] == DEVICE_STATUS_DISABLED) return DEVICE_ERR_ALREADY_IN_WANTED_STATE;
+    if (config->devices[device_index].status == DEVICE_STATUS_DISABLED) return DEVICE_ERR_ALREADY_IN_WANTED_STATE;
 
     // update status
-    config->device_status[pin_index] = DEVICE_STATUS_DISABLED;
+    config->devices[device_index].status = DEVICE_STATUS_DISABLED;
 
     return DEVICE_ERR_NONE;
+}
+
+DEVICE_ERR switch_off_after_interval(Config *config, char *device, int interval_sec) { // TODO Add functionality
+    return DEVICE_ERR_ALREADY_BOUND;
+}
+
+DEVICE_ERR switch_off_after_interval(Config *config, char *device, int interval) { // TODO Add functionality
+    return DEVICE_ERR_ALREADY_BOUND;
 }
 
 char* list_devices(Config* config) {
@@ -222,10 +233,10 @@ char* list_devices(Config* config) {
     if (config->pins_used == 0) return estr_cat("No Devices bound");
 
     // loop over each device and append to string
-    for (int i = 0; i < config->max_devices; i++) {
-        if (config->devices[i] != NULL) {
+    for (int i = 0; i < MAX_DEVICES; i++) {
+        if (config->devices[i].status != DEVICE_STATUS_NOT_BOUND) {
             itoa(config->valid_pins[i], pinString, 10);
-            char *line = estr_cat("`" ,config->devices[i], "` bound to Pin ", pinString, "\n");
+            char *line = estr_cat("`" ,config->devices[i].name, "` bound to Pin ", pinString, "\n");
             char *temp = response; // get pointer to response string
             if (response) response = estr_cat(response, line); // update response
             else response = line;
