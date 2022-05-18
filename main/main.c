@@ -44,12 +44,8 @@ void app_main(void)
     gpio_pad_select_gpio(GPIO_NUM_2);
     gpio_set_direction(GPIO_NUM_2, GPIO_MODE_OUTPUT);
     gpio_set_level(GPIO_NUM_2, 1);
-    config_init(&config);
-
     // Initialize NVS
     esp_err_t ret = nvs_flash_init();
-
-    ESP_LOGI("SIZE", "Config: %d", sizeof (Config));
 
     if (ret == ESP_ERR_NVS_NO_FREE_PAGES || ret == ESP_ERR_NVS_NEW_VERSION_FOUND) {
       ESP_ERROR_CHECK(nvs_flash_erase());
@@ -57,6 +53,7 @@ void app_main(void)
     }
 
     ESP_ERROR_CHECK(ret);
+    load_config(&config);
     wifi_init_sta();
 
     // init_discord_bot
@@ -66,13 +63,7 @@ void app_main(void)
 
     bot = discord_create(&cfg);
     ESP_ERROR_CHECK(discord_register_events(bot, DISCORD_EVENT_ANY, bot_event_handler, NULL));
-
     discord_login(bot);
-
-    init_timer(TIMER_GROUP_0, TIMER_0, true, 3, GPIO_NUM_2, 0);
-    init_timer(TIMER_GROUP_0, TIMER_1, false, 4, GPIO_NUM_2, 1);
-    init_timer(TIMER_GROUP_1, TIMER_0, false, 7, GPIO_NUM_2, 1);
-    init_timer(TIMER_GROUP_1, TIMER_1, false, 10, GPIO_NUM_2, 1);
 }
 
 void wifi_init_sta(void)
