@@ -41,9 +41,6 @@ static void bot_event_handler(void*, esp_event_base_t, int32_t, void*);
 
 void app_main(void)
 {   
-    gpio_pad_select_gpio(GPIO_NUM_2);
-    gpio_set_direction(GPIO_NUM_2, GPIO_MODE_OUTPUT);
-    gpio_set_level(GPIO_NUM_2, 1);
     // Initialize NVS
     esp_err_t ret = nvs_flash_init();
 
