@@ -18,6 +18,8 @@ void config_init(Config *config) {
         config->devices[i].name[0] = '\0';
         config->devices[i].status = DEVICE_STATUS_NOT_BOUND;
         config->devices[i].pin = -1;
+        gpio_pad_select_gpio(valid_pins[i]);
+        gpio_set_direction(valid_pins[i], GPIO_MODE_OUTPUT);
     }
 
     config->pins_used = 0;
@@ -327,6 +329,16 @@ void load_config(Config *config) {
         ESP_ERROR_CHECK(nvs_commit(nvs_handle));
     } else {
         ESP_ERROR_CHECK(status);
+
+        for (int i = 0; i < MAX_DEVICES; i++) {
+            if (config->devices[i].pin != -1) continue;
+
+            if (config->devices[i].status == DEVICE_STATUS_ON) {
+                gpio_set_level(config->devices[i].pin, 1);
+            } else if (config->devices[i].status == DEVICE_STATUS_OFF) {
+                gpio_set_level(config->devices[i].pin, 0);
+            }
+        }
     }
 
     nvs_close(nvs_handle);
