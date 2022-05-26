@@ -1,11 +1,15 @@
 #pragma once
 
+typedef struct Config Config;
+
+#include "timer.h"
+
 #define MAX_DEVICES 10
 #define DEVICE_NAME_LENGTH 20
 #define NVS_VARIABLES_NAMESPACE "VARIABLES"
 #define NVS_CONFIG_VARIABLE "CONFIG"
 
-typedef enum device_err_t {
+typedef enum {
     DEVICE_ERR_NOT_BOUND,
     DEVICE_ERR_DISABLED,
     DEVICE_ERR_ALREADY_IN_WANTED_STATE,
@@ -14,24 +18,25 @@ typedef enum device_err_t {
     DEVICE_OK
 } device_err_t ;
 
-typedef enum device_status_t {
+typedef enum {
     DEVICE_STATUS_ON,
     DEVICE_STATUS_OFF,
     DEVICE_STATUS_DISABLED,
     DEVICE_STATUS_NOT_BOUND
 } device_status_t;
 
-typedef struct Device {
+typedef struct {
     char name[DEVICE_NAME_LENGTH];
     int pin;
     int status;
-} Device;
+} device_info_t;
 
-typedef struct Config {
-    Device devices[MAX_DEVICES];
+struct Config {
+    device_info_t devices[MAX_DEVICES];
+    timers_info_t *timers;
     int valid_pins[MAX_DEVICES];
     int pins_used;
-} Config;
+};
 
 void config_init(Config*);
 // main

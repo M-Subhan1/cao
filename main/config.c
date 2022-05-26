@@ -1,11 +1,11 @@
 #include <stdio.h>
 #include "estr.h"
-#include "config.h"
 #include "esp_log.h"
 #include "esp_http_client.h"
-#include "timer.h"
 #include "string.h"
 #include "nvs_flash.h"
+
+#include "config.h"
 
 extern const uint8_t certificate_pem_start[] asm("_binary_certificate_pem_start");
 extern const uint8_t certificate_pem_end[]   asm("_binary_certificate_pem_end");
@@ -189,6 +189,7 @@ device_err_t delete_device(Config *config, char *name) {
     // find the index of the device and remove device
     for (int i = 0; i < MAX_DEVICES; i++) {
         if (estr_eq(config->devices[i].name, name)) {
+            gpio_set_level(config->devices[i].pin, 0);
             config->devices[i].status = DEVICE_STATUS_NOT_BOUND;
             config->devices[i].pin = -1;
             config->devices[i].name[0] = '\0';
@@ -215,6 +216,7 @@ device_err_t switch_on(Config* config, char *device) {
     
     // update status
     config->devices[device_index].status = DEVICE_STATUS_ON;
+    gpio_set_level(config->devices[device_index].pin, 1);
     // turn device on
 
     return DEVICE_OK; // (turned on)
@@ -233,6 +235,7 @@ device_err_t switch_off(Config* config, char *device) {
     
     // update status
     config->devices[device_index].status = DEVICE_STATUS_OFF;
+    gpio_set_level(config->devices[device_index].pin, 0);
     // turn device off
 
     return DEVICE_OK;
@@ -248,6 +251,7 @@ device_err_t disable_device(Config *config, char *name) {
 
     // update status
     config->devices[device_index].status = DEVICE_STATUS_DISABLED;
+    gpio_set_level(config->devices[device_index].pin, 0);
 
     return DEVICE_OK;
 }
@@ -269,7 +273,6 @@ device_err_t enable_device(Config *config, char *name) {
 device_err_t switch_off_after_interval(Config *config, char *device, int interval_sec) { // TODO Add functionality
     if (get_device_idx(config, device) == -1) return DEVICE_ERR_NOT_BOUND;
 
-    init_timer(TIMER_GROUP_0, TIMER_GROUP_0, false, interval_sec, get_device_idx(config, device), 0);
 
     return DEVICE_OK;
 }
@@ -277,7 +280,6 @@ device_err_t switch_off_after_interval(Config *config, char *device, int interva
 device_err_t switch_on_after_interval(Config *config, char *device, int interval_sec) { // TODO Add functionality
     if (get_device_idx(config, device) == -1) return DEVICE_ERR_NOT_BOUND;
 
-    init_timer(TIMER_GROUP_0, TIMER_GROUP_0, false, interval_sec, get_device_idx(config, device), 0);
 
     return DEVICE_OK;
 }
@@ -341,5 +343,11 @@ void load_config(Config *config) {
         }
     }
 
+    // Initialise timers 
+    config->timers = calloc(1, sizeof (timers_info_t));
+    config->timers->timers_arr = NULL;
+    config->timers->num_timers = 0;
+    init_clock(config);
+    
     nvs_close(nvs_handle);
 }
