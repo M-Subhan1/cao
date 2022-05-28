@@ -1,9 +1,25 @@
 #include "timer.h"
+#include <stdio.h>
+#include "estr.h"
+#include "esp_log.h"
+#include "string.h"
 
 bool IRAM_ATTR timer_group_isr_callback(void *args) {
     Config *config = (Config *) args;
-    
-    gpio_set_level(2, !gpio_get_level(2));
+    uint64_t alarm_value = 0;
+
+    timer_get_alarm_value(TIMER_GROUP_1, TIMER_1, &alarm_value);
+
+    for (int i = 0; i < config->timers->num_timers; i++) {
+        if (config->timers->timers_arr[i].status == TIMER_INACTIVE) continue;
+
+        config->timers->timers_arr[i].fire_time--;
+
+        if (config->timers->timers_arr[i].fire_time - alarm_value != 0) continue;;
+
+        gpio_set_level(config->timers->timers_arr[i].pin_idx, config->timers->timers_arr[i].pin_level);
+    }
+
     return true;
 }
 
@@ -35,44 +51,3 @@ void init_clock(Config *config) {
     init_timer(config, TIMER_GROUP_1, TIMER_1, true, 1);
 };
 
-void add_timer(Config *config, int device_index, int pin_level, int fire_delay) {
-    int num_timers = config->timers->num_timers;
-    uint64_t alarm_value = 0;
-
-    timer_get_alarm_value(TIMER_GROUP_1, TIMER_1, &alarm_value);
-
-    config->timers->timers_arr = realloc(config->timers->timers_arr, (config->timers->num_timers + 1) * sizeof(timer_event_info_t));
-    config->timers->timers_arr[num_timers]->fire_time = alarm_value + fire_delay;
-    config->timers->timers_arr[num_timers]->pin_level = pin_level;
-    config->timers->timers_arr[num_timers]->pin_idx = config->devices[device_index].pin;
-    config->timers->num_timers++;
-}
-
-void reset_timers(Config *config, int device_index) {
-    int num_timers = config->timers->num_timers;
-    int pin_index = config->timers->timers_arr[device_index]->pin_idx;
-
-    for (int i = 0; i < config->timers->num_timers; i++) {
-        if (config->timers->timers_arr[i]->pin_idx == pin_index) {
-            free(config->timers->timers_arr[i]);
-            config->timers->timers_arr[i] = NULL;
-            num_timers--;
-        }
-    }
-
-    timer_event_info_t **timers_arr = calloc(num_timers, sizeof (timer_event_info_t));
-
-    for (int i = 0; i < config->timers->num_timers; i++) {
-        if (config->timers->timers_arr[i]) {
-            timers_arr[num_timers - 1]->fire_time = config->timers->timers_arr[i]->fire_time;
-            timers_arr[num_timers - 1]->pin_idx = config->timers->timers_arr[i]->pin_idx;
-            timers_arr[num_timers - 1]->pin_level = config->timers->timers_arr[i]->pin_level;
-
-            free(config->timers->timers_arr[i]);
-            config->timers->timers_arr[i] = NULL;
-            num_timers--;
-        }
-    }
-
-    config->timers->timers_arr = timers_arr;
-}

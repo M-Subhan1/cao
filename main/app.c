@@ -4,14 +4,13 @@
 #include "esp_http_client.h"
 #include "string.h"
 #include "nvs_flash.h"
-
-#include "config.h"
+#include "app.h"
 
 extern const uint8_t certificate_pem_start[] asm("_binary_certificate_pem_start");
 extern const uint8_t certificate_pem_end[]   asm("_binary_certificate_pem_end");
 
 void config_init(Config *config) {
-    int valid_pins[MAX_DEVICES] = {1, 2, 3, 4, 5, 6, 7, 8, 9, 10};
+    int valid_pins[MAX_DEVICES] = {2};
 
     for (int i = 0; i < MAX_DEVICES; i++) {
         config->valid_pins[i] = valid_pins[i];
@@ -23,6 +22,10 @@ void config_init(Config *config) {
     }
 
     config->pins_used = 0;
+    config->timers = calloc(1, sizeof (timers_info_t));
+    config->timers->num_timers = 0;
+
+    for (int i = 0; i < MAX_TIMERS; i++) config->timers->timers_arr[i].status = TIMER_INACTIVE;
 }
 
 char *parse_and_execute_commands(Config *config, char *command) {
@@ -52,7 +55,7 @@ char *parse_and_execute_commands(Config *config, char *command) {
 
         if (status == DEVICE_ERR_NOT_BOUND) response = estr_cat("`", buffer, "`is not bound to any pin!");
         else if (status == DEVICE_OK)  {
-            itoa(config->devices[get_device_idx(config, buffer)].pin, pinString, 10);
+            itoa(config->valid_pins[get_device_idx(config, buffer)], pinString, 10);
             response = estr_cat("Unbound `", buffer, "` from Pin ", pinString);
         }
 
@@ -101,7 +104,7 @@ char *parse_and_execute_commands(Config *config, char *command) {
         device_err_t status = enable_device(config, buffer);
 
         if (status == DEVICE_OK) {
-            response = estr_cat("`", buffer, "` disabled.");
+            response = estr_cat("`", buffer, "` enabled.");
         } else if (status == DEVICE_ERR_ALREADY_IN_WANTED_STATE) {
             response = estr_cat("`", buffer, "` is already enabled.");
         } else if (status == DEVICE_ERR_NOT_BOUND) {
@@ -109,18 +112,62 @@ char *parse_and_execute_commands(Config *config, char *command) {
         }
 
     } else if (estr_sw(command, "!switch_on_delayed ")) {
-        char time_buffer[10];
-        int next_index = get_next_word(command, strlen("!switch_off_delayed "), buffer, 100);
+        char time_buffer[50];
+        int next_index = get_next_word(command, strlen("!switch_on_delayed "), buffer, 100);
         get_next_word(command, next_index, time_buffer, 100);
 
-        ESP_LOGI("TEST", "TimeString: %s\nDevice:%s", time_buffer, buffer);
+        if (atoi(time_buffer) == 0) {
+            response = estr_cat("Invalid Time Value. Value should be a valid integer > 0");
+        } else {
+            device_err_t status = switch_on_after_interval(config, buffer, atoi(time_buffer));
+
+            if (status == DEVICE_OK) {
+                response = estr_cat("`", buffer, "` will be switched on in ", time_buffer, " seconds");
+            } else if (status == DEVICE_ERR_NOT_BOUND) {
+                response = estr_cat("`", buffer, "` not bound");
+            } else if (status == DEVICE_ERR_TIMER_MAX_LIMIT) {
+                response = estr_cat("Timer Limit. Cannot add more timers. Kindly wait for a timer to finish or reset all timers for a device.");
+            } else if (status == DEVICE_ERR_DISABLED) {
+                response = estr_cat("`", buffer, "` is disabled! Kindly enable before trying again.");
+            }
+        }
     } else if (estr_sw(command, "!switch_off_delayed ")) {
-        char time_buffer[10];
+        char time_buffer[50];
         int next_index = get_next_word(command, strlen("!switch_off_delayed "), buffer, 100);
         get_next_word(command, next_index, time_buffer, 100);
 
-        ESP_LOGI("TEST", "TimeString: %s\nDevice:%s", time_buffer, buffer);
-    } else if (estr_sw(command, "!list_devices")) {
+        if (atoi(time_buffer) == 0) {
+            response = estr_cat("Invalid Time Value. Value should be a valid integer > 0");
+        } else {
+            device_err_t status = switch_off_after_interval(config, buffer, atoi(time_buffer));
+
+            if (status == DEVICE_OK) {
+                response = estr_cat("`", buffer, "` will be switched off in ", time_buffer, " seconds");
+            } else if (status == DEVICE_ERR_NOT_BOUND) {
+                response = estr_cat("`", buffer, "` not bound");
+            } else if (status == DEVICE_ERR_TIMER_MAX_LIMIT) {
+                response = estr_cat("Timer Limit. Cannot add more timers. Kindly wait for a timer to finish or clear timers for a device.");
+            } else if (status == DEVICE_ERR_DISABLED) {
+                response = estr_cat("`", buffer, "` is disabled! Kindly enable before trying again.");
+            }
+        }
+    } else if (estr_sw(command, "!clear_timers ")) {
+        get_next_word(command, strlen("!clear_timers "), buffer, 100);
+        device_err_t status = clear_timers(config, get_device_idx(config, buffer), false);
+
+        if (status == DEVICE_OK) {
+            response = estr_cat("All Timers for `", buffer ," Removed.");
+        } else if (status == DEVICE_ERR_NOT_BOUND) {
+            response = estr_cat("`", buffer, "` not bound");
+        } else if (status == DEVICE_ERR_TIMER_DOES_NOT_EXIST) {
+            response = estr_cat("No Timers for `", buffer ,"` exist");
+        }
+
+    } else if (estr_sw(command, "!reset_all_timers")) {
+        reset_all_timers(config);
+
+        response = estr_cat("All Timers Reset");
+    }  else if (estr_sw(command, "!list_devices")) {
         char *res = list_devices(config);
 
         if (res) return res;
@@ -194,6 +241,8 @@ device_err_t delete_device(Config *config, char *name) {
             config->devices[i].pin = -1;
             config->devices[i].name[0] = '\0';
             config->pins_used--;
+
+            clear_timers(config, i, true);
 
             return DEVICE_OK;
         }
@@ -270,18 +319,80 @@ device_err_t enable_device(Config *config, char *name) {
     return DEVICE_OK;
 }
 
-device_err_t switch_off_after_interval(Config *config, char *device, int interval_sec) { // TODO Add functionality
+device_err_t switch_off_after_interval(Config *config, char *device, int interval_sec) { 
     if (get_device_idx(config, device) == -1) return DEVICE_ERR_NOT_BOUND;
 
+    if (config->devices[get_device_idx(config, device)].status == DEVICE_STATUS_DISABLED) return DEVICE_ERR_DISABLED;
 
-    return DEVICE_OK;
+    return add_timer(config, get_device_idx(config, device), 0, interval_sec);
 }
 
-device_err_t switch_on_after_interval(Config *config, char *device, int interval_sec) { // TODO Add functionality
+device_err_t switch_on_after_interval(Config *config, char *device, int interval_sec) {
     if (get_device_idx(config, device) == -1) return DEVICE_ERR_NOT_BOUND;
 
+    if (config->devices[get_device_idx(config, device)].status == DEVICE_STATUS_DISABLED) return DEVICE_ERR_DISABLED;
 
-    return DEVICE_OK;
+    return add_timer(config, get_device_idx(config, device), 1, interval_sec);
+}
+
+device_err_t add_timer(Config *config, int device_index, int pin_level, int fire_delay) {
+    int num_timers = config->timers->num_timers;
+    uint64_t alarm_value = 0;
+
+    timer_get_alarm_value(TIMER_GROUP_1, TIMER_1, &alarm_value);
+
+    if (config->timers->num_timers == MAX_TIMERS) return DEVICE_ERR_TIMER_MAX_LIMIT;
+
+    for (int i = 0; i < MAX_TIMERS; i++) {
+        if (config->timers->timers_arr[num_timers].status == TIMER_ACTIVE) continue;
+
+        config->timers->timers_arr[num_timers].status = TIMER_ACTIVE;
+        config->timers->timers_arr[num_timers].fire_time = alarm_value + fire_delay;
+        config->timers->timers_arr[num_timers].pin_level = pin_level;
+        config->timers->timers_arr[num_timers].pin_idx = config->devices[device_index].pin;
+        config->timers->num_timers++;
+
+        ESP_LOGI("TIMER ADDED", "Num timers: %d", config->timers->num_timers);
+
+        return DEVICE_OK;
+    }
+
+    ESP_LOGE("TIMER ERROR", "Num timers: %d", config->timers->num_timers);
+
+    return DEVICE_ERR_TIMER_MAX_LIMIT;
+}
+
+device_err_t clear_timers(Config *config, int device_index, bool remove) {
+    int num_timers = config->timers->num_timers;
+
+    if (num_timers == 0) return DEVICE_ERR_TIMER_DOES_NOT_EXIST;
+
+    for (int i = 0; i < MAX_TIMERS; i++) {
+        if (config->timers->timers_arr[num_timers].status != TIMER_ACTIVE) continue;
+        if (config->timers->timers_arr[num_timers].pin_idx != config->devices[device_index].pin) continue;
+
+        if (remove == true) config->timers->timers_arr[num_timers].pin_idx = -1;
+        config->timers->timers_arr[num_timers].status = TIMER_INACTIVE;
+        config->timers->num_timers--;
+
+        ESP_LOGI("TIMER REMOVED", "Num timers: %d", config->timers->num_timers);
+
+        return DEVICE_OK;
+    }
+
+    ESP_LOGE("TIMER ERROR", "Num timers: %d", config->timers->num_timers);
+
+    return DEVICE_ERR_TIMER_DOES_NOT_EXIST;
+}
+
+void reset_all_timers(Config *config) {
+    for (int i = 0; i < MAX_TIMERS; i++) {
+        if (config->timers->timers_arr[i].status != TIMER_ACTIVE) continue;
+        if (config->timers->timers_arr[i].pin_idx == -1) continue;
+
+        config->timers->timers_arr[i].status = TIMER_ACTIVE;
+        config->timers->num_timers++;
+    }
 }
 
 char* list_devices(Config* config) {
@@ -320,6 +431,11 @@ void save_config(Config *config) {
 }
 
 void load_config(Config *config) {
+    config_init(config);
+    init_clock(config);
+
+    return;
+
     nvs_handle_t nvs_handle;
     size_t length = sizeof(Config);
     nvs_open(NVS_VARIABLES_NAMESPACE, NVS_READWRITE, &nvs_handle);
@@ -327,27 +443,17 @@ void load_config(Config *config) {
     esp_err_t status = nvs_get_blob(nvs_handle, NVS_CONFIG_VARIABLE, &config, &length);
     if (status == ESP_ERR_NVS_NOT_FOUND) {
         config_init(config);
+        length = sizeof(Config);
         ESP_ERROR_CHECK(nvs_set_blob(nvs_handle, NVS_CONFIG_VARIABLE, &config, length));
         ESP_ERROR_CHECK(nvs_commit(nvs_handle));
     } else {
         ESP_ERROR_CHECK(status);
-
-        for (int i = 0; i < MAX_DEVICES; i++) {
-            if (config->devices[i].pin != -1) continue;
-
-            if (config->devices[i].status == DEVICE_STATUS_ON) {
-                gpio_set_level(config->devices[i].pin, 1);
-            } else if (config->devices[i].status == DEVICE_STATUS_OFF) {
-                gpio_set_level(config->devices[i].pin, 0);
-            }
-        }
     }
 
     // Initialise timers 
-    config->timers = calloc(1, sizeof (timers_info_t));
-    config->timers->timers_arr = NULL;
-    config->timers->num_timers = 0;
-    init_clock(config);
+    // config->timers = calloc(1, sizeof (timers_info_t));
+    // config->timers->timers_arr = NULL;
+    // config->timers->num_timers = 0;
     
     nvs_close(nvs_handle);
 }
