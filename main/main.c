@@ -14,7 +14,7 @@
 #include "discord.h"
 #include "discord/session.h"
 #include "discord/message.h"
-#include "config.h"
+#include "app.h"
 #include <driver/gpio.h>
 #include "timer.h"
 
