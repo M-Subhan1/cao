@@ -5,6 +5,7 @@
 #include "string.h"
 #include "nvs_flash.h"
 #include "app.h"
+#include "cJSON.h"
 
 extern const uint8_t certificate_pem_start[] asm("_binary_certificate_pem_start");
 extern const uint8_t certificate_pem_end[]   asm("_binary_certificate_pem_end");
@@ -176,7 +177,7 @@ char *parse_and_execute_commands(Config *config, char *command) {
         return list_commands(config);
     }
 
-    save_config(config);
+    save_config_as_json(config);
     return response;
 }
 
@@ -202,7 +203,6 @@ int get_device_idx(Config *config, char *name) {
 }
 
 device_err_t register_device(Config *config, char *name) {
-    int index = 0;
     // if no pins are vacant, return err_code: -1
     if (config->pins_used == MAX_DEVICES) {
         return DEVICE_ERR_NO_VACANT_PINS;
@@ -211,18 +211,14 @@ device_err_t register_device(Config *config, char *name) {
     if (get_device_idx(config, name) != -1) return DEVICE_ERR_ALREADY_BOUND;
     // If device Does not Exist find a vacant pin and create device
     for (int i = 0; i < MAX_DEVICES; i++) {
-        index = 0;
-
-        if (config->devices[i].name[0] == '\0') {
-            while (name[index] != '\0' && index < DEVICE_NAME_LENGTH - 1)
-            {
-                config->devices[i].name[index] = name[index];
-                config->devices[i].status = DEVICE_STATUS_OFF;
-                config->devices[i].pin = config->valid_pins[i];
-                index++;
-            }
-            
+        if (config->devices[i].status == DEVICE_STATUS_NOT_BOUND) {
+            strncpy(config->devices[i].name, name, DEVICE_NAME_LENGTH - 2);
+            config->devices[i].name[DEVICE_NAME_LENGTH - 1] = '\0';
+            config->devices[i].name[strlen(name)] = '\0';
+            config->devices[i].pin = config->valid_pins[i];
+            config->devices[i].status = DEVICE_STATUS_OFF;
             config->pins_used++;
+            save_config_as_json(config);
             return DEVICE_OK;
         }
     }
@@ -244,6 +240,7 @@ device_err_t delete_device(Config *config, char *name) {
 
             clear_timers(config, i, true);
 
+            save_config_as_json(config);
             return DEVICE_OK;
         }
     }
@@ -268,6 +265,7 @@ device_err_t switch_on(Config* config, char *device) {
     gpio_set_level(config->devices[device_index].pin, 1);
     // turn device on
 
+    save_config_as_json(config);
     return DEVICE_OK; // (turned on)
 }
 
@@ -287,6 +285,7 @@ device_err_t switch_off(Config* config, char *device) {
     gpio_set_level(config->devices[device_index].pin, 0);
     // turn device off
 
+    save_config_as_json(config);
     return DEVICE_OK;
 } 
 
@@ -302,6 +301,7 @@ device_err_t disable_device(Config *config, char *name) {
     config->devices[device_index].status = DEVICE_STATUS_DISABLED;
     gpio_set_level(config->devices[device_index].pin, 0);
 
+    save_config_as_json(config);
     return DEVICE_OK;
 }
 
@@ -316,6 +316,7 @@ device_err_t enable_device(Config *config, char *name) {
     // update status
     config->devices[device_index].status = DEVICE_STATUS_OFF;
 
+    save_config_as_json(config);
     return DEVICE_OK;
 }
 
@@ -420,40 +421,91 @@ char* list_commands(Config* config) {
     return NULL;
 }
 
-void save_config(Config *config) {
+void load_config(Config *config) {
     nvs_handle_t nvs_handle;
-    size_t length = sizeof(Config);
+    size_t length = 0;
+    char *json_string = NULL;
+
+    config_init(config);
 
     ESP_ERROR_CHECK(nvs_open(NVS_VARIABLES_NAMESPACE, NVS_READWRITE, &nvs_handle));
-    ESP_ERROR_CHECK(nvs_set_blob(nvs_handle, NVS_CONFIG_VARIABLE, &config, length));
-    ESP_ERROR_CHECK(nvs_commit(nvs_handle));
-    nvs_close(nvs_handle);
-}
+    nvs_get_str(nvs_handle, NVS_CONFIG_VARIABLE, NULL, &length);
 
-void load_config(Config *config) {
-    config_init(config);
-    init_clock(config);
+    if (length > 0) json_string = calloc(length, sizeof(char));
 
-    return;
+    esp_err_t status = nvs_get_str(nvs_handle, NVS_CONFIG_VARIABLE, json_string, &length);
 
-    nvs_handle_t nvs_handle;
-    size_t length = sizeof(Config);
-    nvs_open(NVS_VARIABLES_NAMESPACE, NVS_READWRITE, &nvs_handle);
+    if (status == ESP_OK) {
+        // Parse json
+        cJSON *json = cJSON_Parse(json_string);
+        cJSON *pins_used = cJSON_GetObjectItemCaseSensitive(json, "pins_used");
+        cJSON *devices = cJSON_GetObjectItemCaseSensitive(json, "devices");
 
-    esp_err_t status = nvs_get_blob(nvs_handle, NVS_CONFIG_VARIABLE, &config, &length);
-    if (status == ESP_ERR_NVS_NOT_FOUND) {
+        config->pins_used = pins_used->valueint;
+
+        for (int i = 0; i < MAX_DEVICES; i++) {
+            cJSON *device = cJSON_GetArrayItem(devices, i);
+
+            if (device) {
+                cJSON *name = cJSON_GetObjectItemCaseSensitive(device, "name");
+                cJSON *status = cJSON_GetObjectItemCaseSensitive(device, "status");
+                cJSON *pin = cJSON_GetObjectItemCaseSensitive(device, "pin");
+
+                strcpy(config->devices[i].name, name->valuestring);
+                config->devices[i].pin = pin->valueint;
+                config->devices[i].status = status->valueint;
+            }
+        }
+
+        cJSON_Delete(json);
+        // Restore Device State
+        for (int i = 0; i < MAX_DEVICES; i++) {
+            gpio_pad_select_gpio(config->valid_pins[i]);
+            ESP_ERROR_CHECK(gpio_set_direction(config->valid_pins[i], GPIO_MODE_OUTPUT));
+
+            if (config->devices[i].status == DEVICE_STATUS_ON) {
+                ESP_ERROR_CHECK(gpio_set_level(config->devices[i].pin, 1));
+            }
+        };
+
+        nvs_close(nvs_handle);
+    } else if (status == ESP_ERR_NVS_NOT_FOUND) {
+        nvs_close(nvs_handle);
         config_init(config);
-        length = sizeof(Config);
-        ESP_ERROR_CHECK(nvs_set_blob(nvs_handle, NVS_CONFIG_VARIABLE, &config, length));
-        ESP_ERROR_CHECK(nvs_commit(nvs_handle));
+        save_config_as_json(config);
     } else {
         ESP_ERROR_CHECK(status);
+        return;
     }
 
-    // Initialise timers 
-    // config->timers = calloc(1, sizeof (timers_info_t));
-    // config->timers->timers_arr = NULL;
-    // config->timers->num_timers = 0;
-    
+    if (json_string) free(json_string);
+    init_clock(config);
+}
+
+void save_config_as_json(Config *config) {
+    nvs_handle_t nvs_handle;
+
+    cJSON *json = cJSON_CreateObject();
+    cJSON *devices = cJSON_CreateArray();
+
+    for (int i = 0; i < MAX_DEVICES; i++) {
+        cJSON *device = cJSON_CreateObject();
+        cJSON_AddNumberToObject(device, "pin", config->devices[i].pin);
+        cJSON_AddStringToObject(device, "name", config->devices[i].name);
+        cJSON_AddNumberToObject(device, "status", config->devices[i].status);
+        cJSON_AddItemToArray(devices, device);
+    }
+
+    cJSON_AddNumberToObject(json, "pins_used", config->pins_used);
+    cJSON_AddItemToObject(json, "devices", devices);
+
+    char *json_string = cJSON_Print(json);
+    cJSON_Delete(json);
+
+    // save string
+    ESP_ERROR_CHECK(nvs_open(NVS_VARIABLES_NAMESPACE, NVS_READWRITE, &nvs_handle));
+    ESP_ERROR_CHECK(nvs_set_str(nvs_handle, NVS_CONFIG_VARIABLE, json_string));
+    ESP_ERROR_CHECK(nvs_commit(nvs_handle));
     nvs_close(nvs_handle);
+    free(json_string);
 }

@@ -6,8 +6,8 @@ typedef struct Config Config;
 
 #define MAX_DEVICES 1
 #define DEVICE_NAME_LENGTH 20
-#define NVS_VARIABLES_NAMESPACE "VARIABLES"
-#define NVS_CONFIG_VARIABLE "CONFIG"
+#define NVS_VARIABLES_NAMESPACE "CONFIG"
+#define NVS_CONFIG_VARIABLE "JSON_STRING"
 
 typedef enum {
     DEVICE_ERR_NOT_BOUND,
@@ -35,9 +35,9 @@ typedef struct {
 
 struct Config {
     device_info_t devices[MAX_DEVICES];
-    timers_info_t *timers;
     int valid_pins[MAX_DEVICES];
     int pins_used;
+    timers_info_t *timers;
 };
 
 void config_init(Config*);
@@ -60,5 +60,5 @@ char* list_devices(Config *config);
 char* list_commands(Config* config);
 // utils
 int get_next_word(const char *, int,char*, int);
-void save_config(Config *);
+void save_config_as_json(Config *);
 void load_config(Config *);
