@@ -11,7 +11,7 @@ extern const uint8_t certificate_pem_start[] asm("_binary_certificate_pem_start"
 extern const uint8_t certificate_pem_end[]   asm("_binary_certificate_pem_end");
 
 void config_init(Config *config) {
-    int valid_pins[MAX_DEVICES] = {2};
+    int valid_pins[MAX_DEVICES] = {2,4};
 
     for (int i = 0; i < MAX_DEVICES; i++) {
         config->valid_pins[i] = valid_pins[i];
@@ -60,8 +60,8 @@ char *parse_and_execute_commands(Config *config, char *command) {
             response = estr_cat("Unbound `", buffer, "` from Pin ", pinString);
         }
 
-    } else if (estr_sw(command, "!switch_on ")) {
-        get_next_word(command, strlen("!switch_on "), buffer, 100);
+    } else if (estr_sw(command, "!on ")) {
+        get_next_word(command, strlen("!on "), buffer, 100);
         device_err_t status = switch_on(config, buffer);
 
         if (status == DEVICE_OK) {
@@ -74,8 +74,8 @@ char *parse_and_execute_commands(Config *config, char *command) {
             response = estr_cat("`", buffer, "` not bound");
         }
 
-    } else if (estr_sw(command, "!switch_off ")) {
-        get_next_word(command, strlen("!switch_off "), buffer, 100);
+    } else if (estr_sw(command, "!off ")) {
+        get_next_word(command, strlen("!off "), buffer, 100);
         device_err_t status = switch_off(config, buffer);
 
         if (status == DEVICE_OK) {
@@ -112,9 +112,9 @@ char *parse_and_execute_commands(Config *config, char *command) {
             response = estr_cat("`", buffer, "` not bound");
         }
 
-    } else if (estr_sw(command, "!switch_on_delayed ")) {
+    } else if (estr_sw(command, "!on_delayed ")) {
         char time_buffer[50];
-        int next_index = get_next_word(command, strlen("!switch_on_delayed "), buffer, 100);
+        int next_index = get_next_word(command, strlen("!on_delayed "), buffer, 100);
         get_next_word(command, next_index, time_buffer, 100);
 
         if (atoi(time_buffer) == 0) {
@@ -132,9 +132,9 @@ char *parse_and_execute_commands(Config *config, char *command) {
                 response = estr_cat("`", buffer, "` is disabled! Kindly enable before trying again.");
             }
         }
-    } else if (estr_sw(command, "!switch_off_delayed ")) {
+    } else if (estr_sw(command, "!off_delayed ")) {
         char time_buffer[50];
-        int next_index = get_next_word(command, strlen("!switch_off_delayed "), buffer, 100);
+        int next_index = get_next_word(command, strlen("!off_delayed "), buffer, 100);
         get_next_word(command, next_index, time_buffer, 100);
 
         if (atoi(time_buffer) == 0) {
@@ -162,18 +162,14 @@ char *parse_and_execute_commands(Config *config, char *command) {
             response = estr_cat("`", buffer, "` not bound");
         } else if (status == DEVICE_ERR_TIMER_DOES_NOT_EXIST) {
             response = estr_cat("No Timers for `", buffer ,"` exist");
-        }
+        } 
 
-    } else if (estr_sw(command, "!reset_all_timers")) {
-        reset_all_timers(config);
-
-        response = estr_cat("All Timers Reset");
-    }  else if (estr_sw(command, "!list_devices")) {
+    } else if (estr_sw(command, "!devices")) {
         char *res = list_devices(config);
 
         if (res) return res;
         return estr_cat("Err");
-    } else if (estr_sw(command, "!list_commands")) {
+    } else if (estr_sw(command, "!help")) {
         return list_commands(config);
     }
 
@@ -369,11 +365,11 @@ device_err_t clear_timers(Config *config, int device_index, bool remove) {
     if (num_timers == 0) return DEVICE_ERR_TIMER_DOES_NOT_EXIST;
 
     for (int i = 0; i < MAX_TIMERS; i++) {
-        if (config->timers->timers_arr[num_timers].status != TIMER_ACTIVE) continue;
-        if (config->timers->timers_arr[num_timers].pin_idx != config->devices[device_index].pin) continue;
+        if (config->timers->timers_arr[i].status != TIMER_ACTIVE) continue;
+        if (config->timers->timers_arr[i].pin_idx != config->devices[device_index].pin) continue;
 
-        if (remove == true) config->timers->timers_arr[num_timers].pin_idx = -1;
-        config->timers->timers_arr[num_timers].status = TIMER_INACTIVE;
+        if (remove == true) config->timers->timers_arr[i].pin_idx = -1;
+        config->timers->timers_arr[i].status = TIMER_INACTIVE;
         config->timers->num_timers--;
 
         ESP_LOGI("TIMER REMOVED", "Num timers: %d", config->timers->num_timers);
@@ -386,31 +382,29 @@ device_err_t clear_timers(Config *config, int device_index, bool remove) {
     return DEVICE_ERR_TIMER_DOES_NOT_EXIST;
 }
 
-void reset_all_timers(Config *config) {
-    for (int i = 0; i < MAX_TIMERS; i++) {
-        if (config->timers->timers_arr[i].status != TIMER_ACTIVE) continue;
-        if (config->timers->timers_arr[i].pin_idx == -1) continue;
-
-        config->timers->timers_arr[i].status = TIMER_ACTIVE;
-        config->timers->num_timers++;
-    }
-}
-
 char* list_devices(Config* config) {
-    char pinString[10];
     char *response = NULL;
+    char *status = NULL;
+    char buffer[150];
 
     if (config->pins_used == 0) return estr_cat("No Devices bound");
 
     // loop over each device and append to string
+
     for (int i = 0; i < MAX_DEVICES; i++) {
         if (config->devices[i].status != DEVICE_STATUS_NOT_BOUND) {
-            itoa(config->valid_pins[i], pinString, 10);
-            char *line = estr_cat("`" ,config->devices[i].name, "` bound to Pin ", pinString, "\n");
+            if (config->devices[i].status == DEVICE_STATUS_ON) status = estr_cat("ON      ");
+            else if (config->devices[i].status == DEVICE_STATUS_OFF) status = estr_cat("OFF     ");
+            else status = estr_cat("DISABLED");
+
+            sprintf(buffer, "DEVICE:\t%.20s\t\tSTATUS:\t%.8s\t\tPIN:\t%d\n", config->devices[i].name, status, config->devices[i].pin);
+            // concatenate line
             char *temp = response; // get pointer to response string
-            if (response) response = estr_cat(response, line); // update response
-            else response = line;
-            if (temp) free(temp); // if temp exists, free temp
+            if (response) response = estr_cat(response, buffer); // update response
+            else response = estr_cat(buffer);
+            // Free memory
+            if (temp) free(temp);
+            free(status);
         }
     }
 
@@ -418,7 +412,20 @@ char* list_devices(Config* config) {
 }
 
 char* list_commands(Config* config) {
-    return NULL;
+    return estr_cat(
+        "!bind <DEVICE_NAME> - Binds the device to a free pin\n"
+        "!unbind <DEVICE_NAME> - Frees the pin bound to the device\n"
+        "!on <DEVICE_NAME> - Turn on the device\n"
+        "!off <DEVICE_NAME> - Turns off the device\n"
+        "!disable <DEVICE_NAME> - Disables a device, stopping all features from working\n"
+        "!enable <DEVICE_NAME> - Enables a device, allowing all features to work\n"
+        "!on_delayed <DEVICE_NAME> <DELAY_IN_SEC> - Turns on the device after Time delay(in seconds)\n"
+        "!off_delayed <DEVICE_NAME> <DELAY_IN_SEC> - Turns off the device after Time delay(in seconds)\n"
+        "!on_delayed <DEVICE_NAME> <DELAY_IN_SEC> - Turns off the device after Time delay(in seconds)\n"
+        "!clear_timers <DEVICE_NAME> - Clears all timers for the specified device\n"
+        "!devices - Prints details about all registered devices\n"
+        "!help - Returns the list of available commands\n"
+    );
 }
 
 void load_config(Config *config) {

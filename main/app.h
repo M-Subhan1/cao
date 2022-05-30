@@ -4,7 +4,7 @@ typedef struct Config Config;
 
 #include "timer.h"
 
-#define MAX_DEVICES 1
+#define MAX_DEVICES 2
 #define DEVICE_NAME_LENGTH 20
 #define NVS_VARIABLES_NAMESPACE "CONFIG"
 #define NVS_CONFIG_VARIABLE "JSON_STRING"
