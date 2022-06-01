@@ -1,17 +1,13 @@
 #include <stdio.h>
 #include "estr.h"
 #include "esp_log.h"
-#include "esp_http_client.h"
 #include "string.h"
 #include "nvs_flash.h"
 #include "app.h"
 #include "cJSON.h"
 
-extern const uint8_t certificate_pem_start[] asm("_binary_certificate_pem_start");
-extern const uint8_t certificate_pem_end[]   asm("_binary_certificate_pem_end");
-
 void config_init(Config *config) {
-    int valid_pins[MAX_DEVICES] = {2,4};
+    int valid_pins[MAX_DEVICES] = {13,25,26,27,32}; // 4, 18, 19, 23, 33
 
     for (int i = 0; i < MAX_DEVICES; i++) {
         config->valid_pins[i] = valid_pins[i];
@@ -56,8 +52,7 @@ char *parse_and_execute_commands(Config *config, char *command) {
 
         if (status == DEVICE_ERR_NOT_BOUND) response = estr_cat("`", buffer, "`is not bound to any pin!");
         else if (status == DEVICE_OK)  {
-            itoa(config->valid_pins[get_device_idx(config, buffer)], pinString, 10);
-            response = estr_cat("Unbound `", buffer, "` from Pin ", pinString);
+            response = estr_cat("Unbound `", buffer);
         }
 
     } else if (estr_sw(command, "!on ")) {
@@ -168,9 +163,11 @@ char *parse_and_execute_commands(Config *config, char *command) {
         char *res = list_devices(config);
 
         if (res) return res;
-        return estr_cat("Err");
+        return estr_cat("No Devices bound");
     } else if (estr_sw(command, "!help")) {
         return list_commands(config);
+    } else if (estr_sw(command, "!timers")) {
+        return list_timers(config);
     }
 
     save_config_as_json(config);
@@ -333,20 +330,15 @@ device_err_t switch_on_after_interval(Config *config, char *device, int interval
 }
 
 device_err_t add_timer(Config *config, int device_index, int pin_level, int fire_delay) {
-    int num_timers = config->timers->num_timers;
-    uint64_t alarm_value = 0;
-
-    timer_get_alarm_value(TIMER_GROUP_1, TIMER_1, &alarm_value);
-
     if (config->timers->num_timers == MAX_TIMERS) return DEVICE_ERR_TIMER_MAX_LIMIT;
 
     for (int i = 0; i < MAX_TIMERS; i++) {
-        if (config->timers->timers_arr[num_timers].status == TIMER_ACTIVE) continue;
+        if (config->timers->timers_arr[i].status == TIMER_ACTIVE) continue;
 
-        config->timers->timers_arr[num_timers].status = TIMER_ACTIVE;
-        config->timers->timers_arr[num_timers].fire_time = alarm_value + fire_delay;
-        config->timers->timers_arr[num_timers].pin_level = pin_level;
-        config->timers->timers_arr[num_timers].pin_idx = config->devices[device_index].pin;
+        config->timers->timers_arr[i].status = TIMER_ACTIVE;
+        config->timers->timers_arr[i].fire_time = fire_delay;
+        config->timers->timers_arr[i].pin_level = pin_level;
+        config->timers->timers_arr[i].pin_idx = config->devices[device_index].pin;
         config->timers->num_timers++;
 
         ESP_LOGI("TIMER ADDED", "Num timers: %d", config->timers->num_timers);
@@ -372,7 +364,7 @@ device_err_t clear_timers(Config *config, int device_index, bool remove) {
         config->timers->timers_arr[i].status = TIMER_INACTIVE;
         config->timers->num_timers--;
 
-        ESP_LOGI("TIMER REMOVED", "Num timers: %d", config->timers->num_timers);
+        ESP_LOGI("TIMERS REMOVED", "Num timers: %d", config->timers->num_timers);
 
         return DEVICE_OK;
     }
@@ -380,6 +372,43 @@ device_err_t clear_timers(Config *config, int device_index, bool remove) {
     ESP_LOGE("TIMER ERROR", "Num timers: %d", config->timers->num_timers);
 
     return DEVICE_ERR_TIMER_DOES_NOT_EXIST;
+}
+
+char* list_timers(Config *config) {
+    char *response = NULL;
+    char buffer[150];
+
+    if (config->pins_used == 0) return estr_cat("No Devices bound");
+
+    // loop over each device and append to string
+    for (int i = 0; i < MAX_TIMERS; i++) {
+        if (config->timers->timers_arr[i].status == TIMER_ACTIVE) {
+            char *status = NULL;
+            const device_info_t *device = NULL;
+
+            for (int j = 0; j < MAX_DEVICES; j++) {
+                if (config->devices[j].pin == config->timers->timers_arr[i].pin_idx) device = &config->devices[j];
+            }
+
+            if (!device) continue;
+
+            if (config->timers->timers_arr[i].pin_level == 0) status = estr_cat("OFF");
+            else status = estr_cat("ON");
+
+            sprintf(buffer, "TIMER ID: %d,ACTION: %s will turn %s in %d seconds\n", i, device->name, status, config->timers->timers_arr[i].fire_time);
+            // concatenate line
+            char *temp = response; // get pointer to response string
+            if (response) response = estr_cat(response, buffer); // update response
+            else response = estr_cat(buffer);
+            // Free memory
+            if (temp) free(temp);
+            free(status);
+        }
+    }   
+
+    if (!response) return estr_cat("No Active timers");
+    
+    return response;
 }
 
 char* list_devices(Config* config) {
@@ -390,7 +419,6 @@ char* list_devices(Config* config) {
     if (config->pins_used == 0) return estr_cat("No Devices bound");
 
     // loop over each device and append to string
-
     for (int i = 0; i < MAX_DEVICES; i++) {
         if (config->devices[i].status != DEVICE_STATUS_NOT_BOUND) {
             if (config->devices[i].status == DEVICE_STATUS_ON) status = estr_cat("ON      ");
@@ -422,7 +450,8 @@ char* list_commands(Config* config) {
         "!on_delayed <DEVICE_NAME> <DELAY_IN_SEC> - Turns on the device after Time delay(in seconds)\n"
         "!off_delayed <DEVICE_NAME> <DELAY_IN_SEC> - Turns off the device after Time delay(in seconds)\n"
         "!on_delayed <DEVICE_NAME> <DELAY_IN_SEC> - Turns off the device after Time delay(in seconds)\n"
-        "!clear_timers <DEVICE_NAME> - Clears all timers for the specified device\n"
+        "!clear_timers <DEVICE_NAME> - Clears all timers for the specified device\n",
+        "!timers <DEVICE_NAME> - List all active timers\n"
         "!devices - Prints details about all registered devices\n"
         "!help - Returns the list of available commands\n"
     );
@@ -475,18 +504,17 @@ void load_config(Config *config) {
             }
         };
 
-        nvs_close(nvs_handle);
     } else if (status == ESP_ERR_NVS_NOT_FOUND) {
-        nvs_close(nvs_handle);
         config_init(config);
         save_config_as_json(config);
     } else {
+        nvs_close(nvs_handle);
         ESP_ERROR_CHECK(status);
         return;
     }
 
+    nvs_close(nvs_handle);
     if (json_string) free(json_string);
-    init_clock(config);
 }
 
 void save_config_as_json(Config *config) {

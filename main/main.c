@@ -45,13 +45,12 @@ void app_main(void)
     }
 
     ESP_ERROR_CHECK(ret);
-
     // Restore device State
     load_config(&config);
-
     // initialize_discord_bot
     bot_cfg.intents = DISCORD_INTENT_GUILD_MESSAGES;
     wifi_init_sta();
+    init_clock(&config);
 }
 
 void wifi_init_sta(void)
