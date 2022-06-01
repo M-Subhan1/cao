@@ -4,10 +4,10 @@ typedef struct Config Config;
 
 #include "timer.h"
 
-#define MAX_DEVICES 2
+#define MAX_DEVICES 5
 #define DEVICE_NAME_LENGTH 20
-#define NVS_VARIABLES_NAMESPACE "CONFIG"
-#define NVS_CONFIG_VARIABLE "JSON_STRING"
+#define NVS_VARIABLES_NAMESPACE "config"
+#define NVS_CONFIG_VARIABLE "json_string"
 
 typedef enum {
     DEVICE_ERR_NOT_BOUND,
@@ -58,6 +58,7 @@ void reset_all_timers(Config *config);
 int get_device_idx(Config*config, char *device);
 char* list_devices(Config *config);
 char* list_commands(Config* config);
+char* list_timers(Config *config);
 // utils
 int get_next_word(const char *, int,char*, int);
 void save_config_as_json(Config *);

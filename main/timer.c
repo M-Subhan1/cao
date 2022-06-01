@@ -1,8 +1,9 @@
 #include "timer.h"
-#include <stdio.h>
-#include "estr.h"
 #include "esp_log.h"
-#include "string.h"
+#include "app.h"
+#include "nvs_flash.h"
+#include "cJSON.h"
+#include <driver/gpio.h>
 
 bool IRAM_ATTR timer_group_isr_callback(void *args) {
     Config *config = (Config *) args;
@@ -15,8 +16,9 @@ bool IRAM_ATTR timer_group_isr_callback(void *args) {
 
         config->timers->timers_arr[i].fire_time--;
 
-        if (config->timers->timers_arr[i].fire_time - alarm_value != 0) continue;;
+        if (config->timers->timers_arr[i].fire_time > 0) continue;
 
+        config->timers->timers_arr[i].status = TIMER_INACTIVE;
         gpio_set_level(config->timers->timers_arr[i].pin_idx, config->timers->timers_arr[i].pin_level);
     }
 
@@ -48,6 +50,6 @@ void init_timer(Config *config, int group, int timer, bool auto_reload, int time
 }
 
 void init_clock(Config *config) {
-    init_timer(config, TIMER_GROUP_1, TIMER_1, true, 1);
+    init_timer(config, TIMER_GROUP_1, TIMER_1, true, 2);
 };
 
