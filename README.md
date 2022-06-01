@@ -6,9 +6,9 @@ An ESP-32 bot written using ESP-IDF framework. I have found myself glued to disc
   > Note 1: You need to have installed [C/C++](https://marketplace.visualstudio.com/items?itemName=ms-vscode.cpptools) extension in your VS Code.
   > Note 2: Make sure that you have `ESP_IDF` environment variable (which leads to esp-idf folder) and path to XTENSA compiler _bin_ folder needs to be present on the `PATH`.
   
-1. Clone repository
+1. Clone repository Recursively
 ```
-git clone https://github.com/M-Subhan1/cao.git
+git clone https://github.com/M-Subhan1/cao.git --recursive
 ```
 
 2. Go inside of project folder
