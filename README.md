@@ -34,19 +34,19 @@ idf.py -p (PORT) flash
 
 ## List of Commands
 
-> !bind <DEVICE_NAME> - Binds the device to a free pin
-> !unbind <DEVICE_NAME> - Frees the pin bound to the device
-> !on <DEVICE_NAME> - Turn on the device
-> !off <DEVICE_NAME> - Turns off the device
-> !disable <DEVICE_NAME> - Disables a device, stopping all features from working
-> !enable <DEVICE_NAME> - Enables a device, allowing all features to work
-> !on_delayed <DEVICE_NAME> <DELAY_IN_SEC> - Turns on the device after Time delay(in seconds)
-> !off_delayed <DEVICE_NAME> <DELAY_IN_SEC> - Turns off the device after Time delay(in seconds)
-> !on_delayed <DEVICE_NAME> <DELAY_IN_SEC> - Turns off the device after Time delay(in seconds)
-> !clear_timers <DEVICE_NAME> - Clears all timers for the specified device
-> !timers <DEVICE_NAME> - List all active timers
-> !devices - Prints details about all registered devices
-> !help - Returns the list of available commands
+- bind <DEVICE_NAME> - Binds the device to a free pin
+- !unbind <DEVICE_NAME> - Frees the pin bound to the device
+- !on <DEVICE_NAME> - Turn on the device
+- !off <DEVICE_NAME> - Turns off the device
+- !disable <DEVICE_NAME> - Disables a device, stopping all features from working
+- !enable <DEVICE_NAME> - Enables a device, allowing all features to work
+- !on_delayed <DEVICE_NAME> <DELAY_IN_SEC> - Turns on the device after Time delay(in seconds)
+- !off_delayed <DEVICE_NAME> <DELAY_IN_SEC> - Turns off the device after Time delay(in seconds)
+- !on_delayed <DEVICE_NAME> <DELAY_IN_SEC> - Turns off the device after Time delay(in seconds)
+- !clear_timers <DEVICE_NAME> - Clears all timers for the specified device
+- !timers <DEVICE_NAME> - List all active timers
+- !devices - Prints details about all registered devices
+- !help - Returns the list of available commands
 
 ## Author
 
