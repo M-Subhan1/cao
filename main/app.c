@@ -6,6 +6,10 @@
 #include "app.h"
 #include "cJSON.h"
 
+/**
+ * @brief Instantiates a default config object
+ * @param config Config * to load config into
+ */
 void config_init(Config *config) {
     int valid_pins[MAX_DEVICES] = {13,25,26,27,32}; // 4, 18, 19, 23, 33
 
@@ -25,6 +29,12 @@ void config_init(Config *config) {
     for (int i = 0; i < MAX_TIMERS; i++) config->timers->timers_arr[i].status = TIMER_INACTIVE;
 }
 
+/**
+ * @brief Instantiates a default config object
+ * @param config Config* containing config
+ * @param command char* containing message string from discord
+ * @return char* response to be send back to discord
+ */
 char *parse_and_execute_commands(Config *config, char *command) {
     if (command[0] != '!') return NULL;
 
@@ -174,6 +184,13 @@ char *parse_and_execute_commands(Config *config, char *command) {
     return response;
 }
 
+
+/**
+ * @brief gets next work and stores inside buffer
+ * @param buffer char* to store word into
+ * @param startIndex int Index to start from
+ * @return int index of the character after word
+ */
 int get_next_word(const char *command, int startIndex, char *buffer, int buffer_size) {
     int index = 0;
     char letter = command[startIndex];
@@ -187,6 +204,12 @@ int get_next_word(const char *command, int startIndex, char *buffer, int buffer_
     return index + startIndex + 1;
 }
 
+/**
+ * @brief gets device index from Config given name
+ * @param config Config * to extract device index from
+ * @param sname char * name of the device to extract index for
+ * @return int index of the device (-1, if none)
+ */
 int get_device_idx(Config *config, char *name) {
     for (int i = 0; i < MAX_DEVICES; i++) {
         if (estr_eq(config->devices[i].name, name)) return i;
@@ -195,6 +218,12 @@ int get_device_idx(Config *config, char *name) {
     return -1; 
 }
 
+/**
+ * @brief registers a device
+ * @param config Config * to extract device index from
+ * @param name char * name of the device to register
+ * @return device_err_t enum
+ */
 device_err_t register_device(Config *config, char *name) {
     // if no pins are vacant, return err_code: -1
     if (config->pins_used == MAX_DEVICES) {
@@ -219,6 +248,12 @@ device_err_t register_device(Config *config, char *name) {
     return DEVICE_ERR_NO_VACANT_PINS;
 }
 
+/**
+ * @brief deletes a device
+ * @param config Config * to extract device index from
+ * @param name char * name of the device to register
+ * @return device_err_t enum
+ */
 device_err_t delete_device(Config *config, char *name) {
     if (config->pins_used == 0) return DEVICE_ERR_NOT_BOUND;
 
@@ -242,6 +277,12 @@ device_err_t delete_device(Config *config, char *name) {
     return DEVICE_ERR_NOT_BOUND;
 }
 
+/**
+ * @brief turns on a device
+ * @param config Config * to extract device index from
+ * @param name char * name of the device to register
+ * @return device_err_t enum
+ */
 device_err_t switch_on(Config* config, char *device) {
     int device_index = get_device_idx(config, device);
 
@@ -262,6 +303,12 @@ device_err_t switch_on(Config* config, char *device) {
     return DEVICE_OK; // (turned on)
 }
 
+/**
+ * @brief turns off a device
+ * @param config Config * to extract device index from
+ * @param name char * name of the device to register
+ * @return device_err_t enum
+ */
 device_err_t switch_off(Config* config, char *device) {
     int device_index = get_device_idx(config, device);
 
@@ -282,6 +329,12 @@ device_err_t switch_off(Config* config, char *device) {
     return DEVICE_OK;
 } 
 
+/**
+ * @brief disables a device
+ * @param config Config * to extract device index from
+ * @param name char * name of the device to register
+ * @return device_err_t enum
+ */
 device_err_t disable_device(Config *config, char *name) {
     int device_index = get_device_idx(config, name);
 
@@ -298,6 +351,12 @@ device_err_t disable_device(Config *config, char *name) {
     return DEVICE_OK;
 }
 
+/**
+ * @brief enables a device
+ * @param config Config * to extract device index from
+ * @param name char * name of the device to register
+ * @return device_err_t enum
+ */
 device_err_t enable_device(Config *config, char *name) {
     int device_index = get_device_idx(config, name);
 
@@ -313,6 +372,13 @@ device_err_t enable_device(Config *config, char *name) {
     return DEVICE_OK;
 }
 
+/**
+ * @brief Add timer to turn off a device
+ * @param config Config * to extract device index from
+ * @param device char * name of the device to register
+ * @param interval_sec int - trigger delay in seconds
+ * @return device_err_t enum
+ */
 device_err_t switch_off_after_interval(Config *config, char *device, int interval_sec) { 
     if (get_device_idx(config, device) == -1) return DEVICE_ERR_NOT_BOUND;
 
@@ -321,6 +387,13 @@ device_err_t switch_off_after_interval(Config *config, char *device, int interva
     return add_timer(config, get_device_idx(config, device), 0, interval_sec);
 }
 
+/**
+ * @brief Add timer to turn on a device
+ * @param config Config * to extract device index from
+ * @param device char * name of the device to register
+ * @param interval_sec int - trigger delay in seconds
+ * @return device_err_t enum
+ */
 device_err_t switch_on_after_interval(Config *config, char *device, int interval_sec) {
     if (get_device_idx(config, device) == -1) return DEVICE_ERR_NOT_BOUND;
 
@@ -329,6 +402,14 @@ device_err_t switch_on_after_interval(Config *config, char *device, int interval
     return add_timer(config, get_device_idx(config, device), 1, interval_sec);
 }
 
+/**
+ * @brief Generic function to add a timer
+ * @param config Config * to extract device index from
+ * @param device_index int - index of the device in Config
+ * @param pin_level int - device status after trigger
+ * @param fire_delay int - trigger delay in seconds
+ * @return device_err_t enum
+ */
 device_err_t add_timer(Config *config, int device_index, int pin_level, int fire_delay) {
     if (config->timers->num_timers == MAX_TIMERS) return DEVICE_ERR_TIMER_MAX_LIMIT;
 
@@ -351,6 +432,13 @@ device_err_t add_timer(Config *config, int device_index, int pin_level, int fire
     return DEVICE_ERR_TIMER_MAX_LIMIT;
 }
 
+/**
+ * @brief Function to clear timers for a device
+ * @param config Config * to extract device index from
+ * @param device_index int - index of the device in Config
+ * @param remove - remove the timer from the list or not
+ * @return device_err_t enum
+ */
 device_err_t clear_timers(Config *config, int device_index, bool remove) {
     int num_timers = config->timers->num_timers;
 
@@ -374,6 +462,12 @@ device_err_t clear_timers(Config *config, int device_index, bool remove) {
     return DEVICE_ERR_TIMER_DOES_NOT_EXIST;
 }
 
+
+/**
+ * @brief List all timers
+ * @param config Config * to extract device index from
+ * @return summary of all active timers
+ */
 char* list_timers(Config *config) {
     char *response = NULL;
     char buffer[150];
@@ -411,6 +505,12 @@ char* list_timers(Config *config) {
     return response;
 }
 
+/**
+ * @brief provides summary of all devices
+ * @param config Config * to extract device index from
+ * @return message to send to discord (summary of all devices)
+*/
+
 char* list_devices(Config* config) {
     char *response = NULL;
     char *status = NULL;
@@ -439,6 +539,12 @@ char* list_devices(Config* config) {
     return response;
 }
 
+
+/**
+ * @brief Prints all available commands
+ * @param config Config * to extract device index from
+ * @return message to send to discord
+ */
 char* list_commands(Config* config) {
     return estr_cat(
         "!bind <DEVICE_NAME> - Binds the device to a free pin\n"
@@ -457,6 +563,10 @@ char* list_commands(Config* config) {
     );
 }
 
+/**
+ * @brief Loads json string from nvs and populate Config obj
+ * @param config Config * to extract device index from
+ */
 void load_config(Config *config) {
     nvs_handle_t nvs_handle;
     size_t length = 0;
@@ -517,6 +627,11 @@ void load_config(Config *config) {
     if (json_string) free(json_string);
 }
 
+
+/**
+ * @brief converts config to json and stores in nvs flash
+ * @param config Config * to extract device index from
+ */
 void save_config_as_json(Config *config) {
     nvs_handle_t nvs_handle;
 

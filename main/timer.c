@@ -3,8 +3,12 @@
 #include "app.h"
 #include "nvs_flash.h"
 #include "cJSON.h"
-#include <driver/gpio.h>
 
+/**
+ * @brief Instantiates a default config object
+ * @param config Config * to load config into
+ * @return whethere to yield control or not
+ */
 bool IRAM_ATTR timer_group_isr_callback(void *args) {
     Config *config = (Config *) args;
     uint64_t alarm_value = 0;
@@ -25,6 +29,14 @@ bool IRAM_ATTR timer_group_isr_callback(void *args) {
     return true;
 }
 
+/**
+ * @brief Instantiates a clock
+ * @param config Config * to load config into
+ * @param group Timer group to configure
+ * @param timer Timer to configure
+ * @param auto_reload Whether to auto reload the timer
+ * @param timer_interval_sec Interval to set the timer to
+ */
 void init_timer(Config *config, int group, int timer, bool auto_reload, int timer_interval_sec)
 {
     timer_config_t timer_config = {
@@ -49,6 +61,10 @@ void init_timer(Config *config, int group, int timer, bool auto_reload, int time
     ESP_ERROR_CHECK(timer_start(group, timer));
 }
 
+/**
+ * @brief Instantiates a clock
+ * @param config Config * to load config into
+ */
 void init_clock(Config *config) {
     init_timer(config, TIMER_GROUP_1, TIMER_1, true, 2);
 };
