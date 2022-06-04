@@ -53,6 +53,7 @@ void app_main(void)
     init_clock(&config);
 }
 
+// instantiates wifi and create application instance
 void wifi_init_sta(void)
 {
     ESP_ERROR_CHECK(esp_netif_init());
@@ -92,6 +93,7 @@ void wifi_init_sta(void)
     ESP_LOGI(TAG, "wifi_init_sta finished.");
 }
 
+// wifi/ip event handler called upon wifi/ip events
 static void event_handler(void* arg, esp_event_base_t event_base, int32_t event_id, void* event_data)
 {
     if (event_base == WIFI_EVENT && event_id == WIFI_EVENT_STA_START) {
@@ -121,6 +123,7 @@ static void event_handler(void* arg, esp_event_base_t event_base, int32_t event_
     } 
 }
 
+// bot event handler, called when bot receives any events
 static void bot_event_handler(void* handler_arg, esp_event_base_t base, int32_t event_id, void* event_data) {
     discord_event_data_t* data = (discord_event_data_t*) event_data;
 
